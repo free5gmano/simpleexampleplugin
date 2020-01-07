@@ -1,0 +1,2 @@
+requests
+service-mapping-plugin-framework
