@@ -94,7 +94,6 @@ class NFVOPlugin(AllocateNSSIabc):
         print(upload_vnfp.status_code)
 
     def listen_on_vnf_package_subscriptions(self):
-        # TODO gitlab feature/deallocateNSSI API in 250 row
         pass
 
     def create_ns_descriptor(self):
@@ -253,6 +252,69 @@ class NFVOPlugin(AllocateNSSIabc):
             "_links": str(nsinfo['_links']),
         }
         return read_instance_nsi
+
+    def update_ns_instantiation(self, ns_instance_id, update_info):
+        print("Update Network service instance ID: {}".format(ns_instance_id))
+        print("Update Network service Info: {}".format(update_info))
+        url = self.NFVO_URL + "nslcm/v1/ns_instances/{}/update/".format(ns_instance_id)
+        data = dict()
+        if 'ADD' in update_info['type']:
+            data = {
+                "updateType": update_info['type'],
+                "addVnfInstance": [
+                    {
+                        "vnfInstanceId": update_info['vnf_instance_id'],
+                        "vnfProfiledId": "string"
+                    }
+                ]
+            }
+        elif 'REMOVE' in update_info['type']:
+            data = {
+                "updateType": update_info['type'],
+                "removeVnfInstanceId": update_info['vnf_instance_id']
+            }
+        update_nsi = requests.post(url, data=json.dumps(data), headers=self.headers)
+        if update_nsi.status_code == 202:
+            print("Update operated status {}".format(update_nsi.status_code))
+        else:
+            response = {
+                "attributeListOut": {
+                    'update_nsi': update_nsi.status_code
+                },
+                "status": "OperationFailed"
+            }
+            raise Exception(response)
+
+    def scale_ns_instantiation(self, ns_instance_id, scale_info):
+        print("Scale Network service instance ID: {}".format(ns_instance_id))
+        print("Scale Network service instance Info".format(scale_info))
+        url = self.NFVO_URL + "nslcm/v1/ns_instances/{}/scale/".format(ns_instance_id)
+        data = {
+            "scaleType": "SCALE_VNF",
+            "scaleVnfData": [
+                {
+                    "vnfInstanceId": scale_info['vnf_instance_id'],
+                    "scaleVnfType": scale_info['type'],
+                    "scaleByStepData": {
+                        "additionalParams": {
+                            "replicas": scale_info['replicas']
+                        }
+                    }
+                }
+            ]
+        }
+
+        scale_nsi = requests.post(url, data=json.dumps(data), headers=self.headers)
+        if scale_nsi.status_code == 202:
+            print("Scale operated status {}".format(scale_nsi.status_code))
+        else:
+            response = {
+                "attributeListOut": {
+                    'scale_nsi': scale_nsi.status_code
+                },
+                "status": "OperationFailed"
+            }
+            raise Exception(response)
 
     def listen_on_ns_instance_subscriptions(self):
         pass
