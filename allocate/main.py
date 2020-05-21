@@ -6,36 +6,33 @@ import os
 
 
 class NFVOPlugin(AllocateNSSIabc):
-    def __init__(self, nm_host, nfvo_host):
-        super().__init__(nm_host, nfvo_host)
+    def __init__(self, nm_host, nfvo_host, subscription_host, parameter):
+        super().__init__(nm_host, nfvo_host, subscription_host, parameter)
         self.vnf_pkg_id = str()
+        self.vnf_subscription_list = dict()
         self.nsd_object_id = str()
+        self.nsd_subscription_id = str()
         self.ns_descriptor_id = str()
         self.ns_instance_id = str()
         self.vnf_instance_data = list()
+        self.nsi_subscription_id = str()
+        self.nsinfo = dict()
         self.headers = {'Content-type': 'application/json'}
 
-    def create_vnf_package(self, vnf_pkg_path):
-        # VNF Package compression
-        src_path = os.getcwd()
-        os.chdir(os.path.join(vnf_pkg_path))
-        file_name = vnf_pkg_path.split('/')[-1]
-        with zipfile.ZipFile(vnf_pkg_path + '.zip', mode='w',
-                             compression=zipfile.ZIP_DEFLATED) as zf:
-            for pkg_root, folders, files in os.walk('.'):
-                for s_file in files:
-                    a_file = os.path.join(pkg_root, s_file)
-                    zf.write(a_file, arcname=os.path.join(file_name, a_file))
-        os.chdir(src_path)
-        # Create VNF Package
+    def coordinate_tn_manager(self):
+        pass
+
+    def create_vnf_package(self, moi_config):
         url = self.NFVO_URL + "vnfpkgm/v1/vnf_packages/"
         data = {
-            "userDefinedData": {}
+            "userDefinedData": {
+                "data": str(moi_config)
+            }
         }
         create_vnfp = requests.post(url, data=json.dumps(data), headers=self.headers)
         if create_vnfp.status_code == 201:
             self.vnf_pkg_id = create_vnfp.json()['id']
-            print("Vnf package ID: {}".format(self.vnf_pkg_id))
+            print("Vnf package ID: {}".format(create_vnfp.json()['id']))
         else:
             response = {
                 "attributeListOut": {
@@ -45,35 +42,62 @@ class NFVOPlugin(AllocateNSSIabc):
             }
             raise Exception(response)
 
+    def create_vnf_package_subscriptions(self, vnf):
+        print("Create vnf package subscribe: {}".format(self.vnf_pkg_id))
+        url = self.NFVO_URL + "vnfpkgm/v1/subscriptions/"
+        data = {
+            "filter": {
+                "vnfPkgId": [self.vnf_pkg_id]
+            },
+            "callbackUri": self.SUBSCRIPTION_HOST + "topics/vnf_pkg/"
+        }
+        create_vnf_subscribe = requests.post(url, data=json.dumps(data), headers=self.headers)
+        if create_vnf_subscribe.status_code == 201:
+            self.vnf_subscription_list[vnf] = create_vnf_subscribe.json()['id']
+        else:
+            response = {
+                "attributeListOut": {
+                    'create_vnf_subscribe': create_vnf_subscribe.status_code
+                },
+                "status": "OperationFailed"
+            }
+            raise Exception(response)
+
+    def read_vnf_package(self, vnf_pkg_id):
+        url = self.NFVO_URL + "vnfpkgm/v1/vnf_packages/{}/".format(vnf_pkg_id)
+        create_vnfp = requests.get(url, headers=self.headers)
+        print("Vnf package ID: {}".format(create_vnfp.json()['id']))
+        return create_vnfp
+
     def upload_vnf_package(self, vnf_pkg_path):
-        vnf_pkg_path = vnf_pkg_path + ".zip"
-        file_name = vnf_pkg_path.split('/')[-1]
-        print("Upload '{}' package...".format(file_name))
+        src_path = os.getcwd()
+        vnf = vnf_pkg_path.split('/')[-1]
+
+        # VNF Package compression
+        os.chdir(os.path.join(vnf_pkg_path))
+        with zipfile.ZipFile(vnf_pkg_path + '.zip', mode='w',
+                             compression=zipfile.ZIP_DEFLATED) as zf:
+            for pkg_root, folders, files in os.walk('.'):
+                for s_file in files:
+                    a_file = os.path.join(pkg_root, s_file)
+                    zf.write(a_file, arcname=os.path.join(vnf, a_file))
+        os.chdir(src_path)
+        print("Upload '{}' package...".format(vnf))
         url = self.NFVO_URL + "vnfpkgm/v1/vnf_packages/{}/package_content/".format(self.vnf_pkg_id)
-        files = {'file': (file_name, open(vnf_pkg_path, 'rb').read(),
+        files = {'file': (vnf + '.zip', open(vnf_pkg_path + '.zip', 'rb').read(),
                           'application/zip', {'Expires': '0'})}
         headers = {
             'Accept': "application/json,application/zip",
             'accept-encoding': "gzip, deflate"
         }
         upload_vnfp = requests.put(url, files=files, headers=headers)
-        if upload_vnfp.status_code == 202:
-            print('Accepted')
-        else:
-            print('Failed')
+        print(upload_vnfp.status_code)
 
-    def create_ns_descriptor(self, ns_descriptor_path):
-        # NS Description compression
-        src_path = os.getcwd()
-        os.chdir(os.path.join(ns_descriptor_path))
-        file_name = ns_descriptor_path.split('/')[-1]
-        with zipfile.ZipFile(ns_descriptor_path + '.zip', mode='w',
-                             compression=zipfile.ZIP_DEFLATED) as zf:
-            for pkg_root, folders, files in os.walk('.'):
-                for s_file in files:
-                    a_file = os.path.join(pkg_root, s_file)
-                    zf.write(a_file, arcname=os.path.join(file_name, a_file))
-        os.chdir(src_path)
+    def listen_on_vnf_package_subscriptions(self):
+        # TODO gitlab feature/deallocateNSSI API in 250 row
+        pass
+
+    def create_ns_descriptor(self):
         print("Create Network service descriptor...")
         url = self.NFVO_URL + "nsd/v1/ns_descriptors/"
         data = {
@@ -91,13 +115,43 @@ class NFVOPlugin(AllocateNSSIabc):
             }
             raise Exception(response)
 
+    def create_ns_descriptor_subscriptions(self, ns_des):
+        print("Network service descriptor object Id: {}".format(self.nsd_object_id))
+        url = self.NFVO_URL + "nsd/v1/subscriptions/"
+        data = {
+            "filter": {
+                "nsdInfoId": [self.nsd_object_id]
+            },
+            "callbackUri": self.SUBSCRIPTION_HOST + "topics/ns_descriptor/"
+        }
+        create_nsd_subscribe = requests.post(url, data=json.dumps(data), headers=self.headers)
+        if create_nsd_subscribe.status_code == 201:
+            self.nsd_subscription_id = create_nsd_subscribe.json()['id']
+        else:
+            response = {
+                "attributeListOut": {
+                    'create_nsd_subscribe': create_nsd_subscribe.status_code
+                },
+                "status": "OperationFailed"
+            }
+            raise Exception(response)
+
     def upload_ns_descriptor(self, ns_descriptor_path):
-        ns_descriptor_path = ns_descriptor_path + ".zip"
-        file_name = ns_descriptor_path.split('/')[-1]
-        print(ns_descriptor_path)
-        print('Upload {} descriptor file...'.format(file_name))
+        src_path = os.getcwd()
+        ns_des = ns_descriptor_path.split('/')[-1]
+
+        # NS Description compression
+        os.chdir(ns_descriptor_path)
+        with zipfile.ZipFile(ns_descriptor_path + '.zip', mode='w',
+                             compression=zipfile.ZIP_DEFLATED) as zf:
+            for pkg_root, folders, files in os.walk('.'):
+                for s_file in files:
+                    a_file = os.path.join(pkg_root, s_file)
+                    zf.write(a_file, arcname=os.path.join(ns_des, a_file))
+        os.chdir(src_path)
+        print('Upload Network Service descriptor file...')
         url = self.NFVO_URL + "nsd/v1/ns_descriptors/{}/nsd_content/".format(self.nsd_object_id)
-        files = {'file': (file_name, open(ns_descriptor_path, 'rb').read(),
+        files = {'file': (ns_des + '.zip', open(ns_descriptor_path + '.zip', 'rb').read(),
                           'application/zip', {'Expires': '0'})}
         headers = {
             'Accept': "application/json,application/zip",
@@ -105,16 +159,20 @@ class NFVOPlugin(AllocateNSSIabc):
         }
         upload_nsd = requests.put(url, files=files, headers=headers)
         print("Upload operated status {}".format(upload_nsd.status_code))
-        self.read_ns_descriptor()
+        self.read_ns_descriptor(self.nsd_object_id)
 
-    def read_ns_descriptor(self):
+    def read_ns_descriptor(self, nsd_object_id):
         # None plugin inherit
-        url = self.NFVO_URL + "nsd/v1/ns_descriptors/{}/".format(self.nsd_object_id)
+        url = self.NFVO_URL + "nsd/v1/ns_descriptors/{}/".format(nsd_object_id)
         get_nsd = requests.get(url, headers=self.headers)
         self.ns_descriptor_id = get_nsd.json()['nsdId']
         print("Network service descriptor ID: {}".format(self.ns_descriptor_id))
+        return get_nsd
 
-    def create_ns_instance(self, ns_descriptor_path):
+    def listen_on_ns_descriptor_subscriptions(self):
+        pass
+
+    def create_ns_instance(self):
         print("Create Network service Instance ...")
         url = self.NFVO_URL + "nslcm/v1/ns_instances/"
         data = {
@@ -131,10 +189,33 @@ class NFVOPlugin(AllocateNSSIabc):
                     "vnfInstanceId": vnf_instance['id'],
                     "vnfProfileId": "string"
                 })
+
         else:
             response = {
                 "attributeListOut": {
                     'create_nsi': create_nsi.status_code
+                },
+                "status": "OperationFailed"
+            }
+            raise Exception(response)
+
+    def create_ns_instance_subscriptions(self):
+        url = self.NFVO_URL + "nslcm/v1/subscriptions/"
+        data = {
+            "filter": {
+                "nsInstanceSubscriptionFilter": {
+                    "nsInstanceIds": [self.ns_instance_id]
+                }
+            },
+            "callbackUri": self.SUBSCRIPTION_HOST + "topics/ns_instances/"
+        }
+        create_nsi_subscribe = requests.post(url, data=json.dumps(data), headers=self.headers)
+        if create_nsi_subscribe.status_code == 201:
+            self.nsi_subscription_id = create_nsi_subscribe.json()['id']
+        else:
+            response = {
+                "attributeListOut": {
+                    'create_nsi_subscribe': create_nsi_subscribe.status_code
                 },
                 "status": "OperationFailed"
             }
@@ -147,17 +228,31 @@ class NFVOPlugin(AllocateNSSIabc):
         url = self.NFVO_URL + "nslcm/v1/ns_instances/{}/instantiate/".format(self.ns_instance_id)
         data = {"vnfInstanceData": self.vnf_instance_data}
         instance_nsi = requests.post(url, data=json.dumps(data), headers=self.headers)
-        if instance_nsi.status_code == 202:
-            print('Accepted')
-        else:
-            print('Failed')
+        print("Instantiation operated status {}".format(instance_nsi.status_code))
+        self.read_ns_instantiation(self.ns_instance_id)
 
+    def read_ns_instantiation(self, ns_instance_id):
+        url = self.NFVO_URL + "nslcm/v1/ns_instances/{}/".format(ns_instance_id)
+        read_instance_nsi = requests.get(url, headers=self.headers)
+        nsinfo = read_instance_nsi.json()
+        vnf_pkg_id_list = []
+        for _ in nsinfo['vnfInstance']:
+            vnf_pkg_id_list.append(_['vnfPkgId'])
+        print('Nsinfo ID: {}'.format(nsinfo['id']))
+        self.nsinfo = {
+            "id": nsinfo['id'],
+            "nsInstanceName": nsinfo['nsInstanceName'],
+            "nsInstanceDescription": nsinfo['nsInstanceDescription'],
+            "nsdId": nsinfo['nsdId'],
+            "nsdInfoId": nsinfo['nsdInfoId'],
+            "flavourId": nsinfo['flavourId'],
+            "vnfInstance": str(nsinfo['vnfInstance']),
+            "vnffgInfo": str(nsinfo['vnffgInfo']),
+            "nestedNsInstanceId": str(nsinfo['nestedNsInstanceId']),
+            "nsState": nsinfo['nsState'],
+            "_links": str(nsinfo['_links']),
+        }
+        return read_instance_nsi
 
-def main():
-    nfvo_plugin = NFVOPlugin(os.environ.get('FREE5GMANO_NM'),  # NM ip
-                             os.environ.get('FREE5GMANO_NFVO'))  # NFVO ip
-    nfvo_plugin.allocate_nssi()
-
-
-if __name__ == '__main__':
-    main()
+    def listen_on_ns_instance_subscriptions(self):
+        pass
