@@ -13,6 +13,7 @@ class NFVOPlugin(AllocateNSSIabc):
         self.nsd_object_id = str()
         self.nsd_subscription_id = str()
         self.ns_descriptor_id = str()
+        self.ns_descriptor_name = str()
         self.ns_instance_id = str()
         self.vnf_instance_data = list()
         self.nsi_subscription_id = str()
@@ -94,6 +95,7 @@ class NFVOPlugin(AllocateNSSIabc):
         print(upload_vnfp.status_code)
 
     def listen_on_vnf_package_subscriptions(self):
+        # TODO gitlab feature/deallocateNSSI API in 250 row
         pass
 
     def create_ns_descriptor(self):
@@ -165,6 +167,7 @@ class NFVOPlugin(AllocateNSSIabc):
         url = self.NFVO_URL + "nsd/v1/ns_descriptors/{}/".format(nsd_object_id)
         get_nsd = requests.get(url, headers=self.headers)
         self.ns_descriptor_id = get_nsd.json()['nsdId']
+        self.ns_descriptor_name = get_nsd.json()['nsdName']
         print("Network service descriptor ID: {}".format(self.ns_descriptor_id))
         return get_nsd
 
@@ -176,8 +179,8 @@ class NFVOPlugin(AllocateNSSIabc):
         url = self.NFVO_URL + "nslcm/v1/ns_instances/"
         data = {
             "nsdId": self.ns_descriptor_id,
-            "nsName": "string",
-            "nsDescription": "string"
+            "nsName": self.ns_descriptor_name,
+            "nsDescription": "None"
         }
         create_nsi = requests.post(url, data=json.dumps(data), headers=self.headers)
         if create_nsi.status_code == 201:
@@ -235,6 +238,11 @@ class NFVOPlugin(AllocateNSSIabc):
         read_instance_nsi = requests.get(url, headers=self.headers)
         nsinfo = read_instance_nsi.json()
         vnf_pkg_id_list = []
+        # subscription_list = {
+        #     'vnfp_subscription': self.vnf_subscription_list,
+        #     'nsd_subscription': self.nsd_subscription_id,
+        #     'nsi_subscription': self.nsi_subscription_id
+        # }
         for _ in nsinfo['vnfInstance']:
             vnf_pkg_id_list.append(_['vnfPkgId'])
         print('Nsinfo ID: {}'.format(nsinfo['id']))

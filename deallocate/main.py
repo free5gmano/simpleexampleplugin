@@ -24,7 +24,10 @@ class NFVOPlugin(DeallocateNSSIabc):
         print(response.status_code)
 
     def delete_network_service_instance_subscriptions(self):
-        pass
+        print('Delete Network service instance subscriptions...')
+        url = self.NFVO_URL + "nslcm/v1/subscriptions/{}/".format(self.nsi_subscription)
+        response = requests.delete(url, headers=self.headers)
+        print(response.status_code)
 
     def update_network_service_descriptor(self):
         print('Update Network service descriptor...')
@@ -45,7 +48,10 @@ class NFVOPlugin(DeallocateNSSIabc):
         print(response.status_code)
 
     def delete_network_service_descriptor_subscriptions(self):
-        pass
+        print('Delete Network service descriptor subscriptions...')
+        url = self.NFVO_URL + "nsd/v1/subscriptions/{}/".format(self.nsd_subscription)
+        response = requests.delete(url, headers=self.headers)
+        print(response.status_code)
 
     def update_vnf_package(self):
         for vnf in self.vnf_package:
@@ -66,4 +72,9 @@ class NFVOPlugin(DeallocateNSSIabc):
             print(response.status_code)
 
     def delete_vnf_package_subscriptions(self):
-        pass
+        for vnf in self.vnfp_subscription:
+            print('Delete {} Vnf Package subscriptions...'.format(vnf))
+            url = "http://10.0.0.217:8000/vnfpkgm/v1/subscriptions/{}/".format(
+                self.vnfp_subscription[vnf])
+            response = requests.delete(url, headers=self.headers)
+            print(response.status_code)
